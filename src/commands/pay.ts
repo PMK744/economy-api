@@ -4,7 +4,7 @@ import { EconomyAPI } from "..";
 function register(world: World, plugin: EconomyAPI) {
   world.commands.register(
     "pay",
-    "Pay another player a specified amount.",
+    "Pay another player a specified amount with your balance.",
     (registry) => {
       // Overload for passing a player target.
       registry.overload(
