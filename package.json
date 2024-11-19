@@ -26,8 +26,8 @@
   ],
   "peerDependencies": {
     "@serenityjs/core": "*",
-    "@serenityjs/plugins": "*",
-    "@serenityjs/logger": "*"
+    "@serenityjs/logger": "*",
+    "@serenityjs/plugins": "*"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

@@ -48,7 +48,7 @@ function register(world: World, plugin: EconomyAPI) {
             
             // Return the balance.
             return {
-              message: `§7${target.username}'s current balance is §a$${balance}.§r`,
+              message: `§u${target.username}'s§7 current balance is §a$${balance}.§r`,
               target: target.username, // Allow the target to be accessed from command execution. 
               balance // Allow the balance to be accessed from command execution.
             }
