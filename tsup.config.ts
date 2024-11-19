@@ -7,6 +7,5 @@ export default defineConfig({
   minify: true,
   dts: true,
   keepNames: true,
-  noExternal: [/^(?!@serenityjs\/)/],
-  external: [/^@serenityjs\//]
+  external: [/^@serenityjs\//, "sqlite3"]
 });

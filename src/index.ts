@@ -1,50 +1,185 @@
+import { resolve } from "node:path";
+
 import { Plugin, PluginType } from "@serenityjs/plugins";
+import { Database } from "sqlite3";
+import { Player, PlayerJoinSignal, WorldEvent } from "@serenityjs/core";
 
-// This is a sample plugin that has a class-based implementation.
-// In Serenity, there are two types of plugins: class-based and function-based.
-// Class-based plugins are more flexible and can be used to create more complex plugins.
-// Function-based plugins are simpler and are used for creating simple plugins.
+import { EconomyCommands } from "./commands";
 
-class SamplePlugin extends Plugin {
-	// Type declares the type of the plugin.
+class EconomyAPI extends Plugin {
+	public readonly type = PluginType.Api;
 
-	// An addon plugin is bundled to the most simplistic form, without any type declarations.
-	// Addon plugins are extracted at runtime and are destroyed after the server is shut down.
-	// Addon plugins are used for creating simple commands, events, and other features that don't require a lot of complexity.
+	/**
+	 * The database connection for the economy plugin.
+	*/
+	public readonly database: Database;
 
-	// An api plugin is a plugin that exposes an api to allow other plugins to interact with.
-	// Api plugins are extracted once, and the source file is deleted after the extraction.
-	// The api plugin is then added to the server workspace, and other plugins can interact with it.
-	// Api plugins are used for creating complex features that require multiple plugins to interact with each other.
-	// Some examples of api plugins are the land claim plugin, the economy plugin, and the permission plugin.
-	public readonly type = PluginType.Addon;
+	/**
+	 * Whether or not the database connection is attached.
+	*/
+	protected attached = false
+
+	/**
+	 * The default balance players start with.
+	*/
+	public defaultBalance = 0;
 
 	public constructor() {
-		// Super assigns the name and version of the plugin.
-		// There is an additional parameter that can be passed to the super constructor,
-		// but since this is a class-based plugin, it is not required, as the properties & methods can be directly created in the class.
-		super("sample-plugin", "1.0.0");
+		super("EconomyAPI", "1.0.0");
+
+		// Create the database connection.
+		this.database = new Database(resolve(process.cwd(), "economy.db"), (error) => {
+			// Check if there was an error opening the database connection.
+			if (error) this.logger.error("Failed to open database connection.", error);
+
+			// Set the attached flag to true if there was no error.
+			else this.attached = true;
+		});
 	}
 
-	// This method is called right after the plugin is loaded from the file system.
-	// Once this method is called, `this.serenity` & `this.pipeline` will be in scope.
-	// This method should be used when registering any custom features; such as commands, traits, generators, providers, blocks, etc.
 	public onInitialize(): void {
-		this.logger.info("Sample plugin initialized!");
+		// Check if the table exists in the database.
+		this.database.get("SELECT name FROM sqlite_master WHERE type='table' AND name='economy'", (error, row) => {
+			// Check if there was an error checking if the table exists.
+			if (error) this.logger.error("Failed to check if table exists.", error);
+
+			// Check if the table does not exist.
+			else if (!row) {
+				// Create the table in the database.
+				this.database.run("CREATE TABLE economy (username TEXT PRIMARY KEY, balance INTEGER)", (error) => {
+					// Check if there was an error creating the table.
+					if (error) this.logger.error("Failed to create table.", error);
+
+					// Log that the table was created successfully.
+					else this.logger.debug("Table created successfully.");
+				});
+			}
+		});
+
+		// Register the commands.
+		this.serenity.on(WorldEvent.WorldInitialize, ({ world }) => {
+			// Register the economy commands
+			for (const register of EconomyCommands) register(world, this);
+		});
+
+		// Hook the world events.
+		this.serenity.on(WorldEvent.PlayerJoin, this.onPlayerJoined.bind(this));
 	}
 
-	// This method is called once all plugins have been initialized and all worlds have been loaded.
-	// This method should be used to start any services and tasks that the plugin requires.
 	public onStartUp(): void {
-		this.logger.info("Sample plugin started up!");
+		// Log that the economy plugin has started.
+		this.logger.info("Plugin has started successfully.");
 	}
 
-	// This method is called when the server is shutting down, but is called before the worlds and raknet server are shut down.
-	// This method should be used to stop any services and tasks that the plugin started up.
-	// This also should be used to clean up any resources that the plugin created via the `onInitialize` method.
 	public onShutDown(): void {
-		this.logger.info("Sample plugin shut down!");
+		// Close the database connection.
+		this.database.close((error) => {
+			// Check if there was an error closing the database connection.
+			if (error) this.logger.error("Failed to close database connection.", error);
+
+			// Set the attached flag to false if there was no error.
+			else this.attached = false;
+		});
+
+		// Log that the economy plugin has stopped.
+		this.logger.info("Plugin has stopped successfully.");
+	}
+
+	/**
+	 * Checks if the database has the player.
+	 * @param player The player to check.
+	 * @returns Whether or not the player is in the database.
+	 */
+	public has(player: Player | string): boolean {
+		// Get the username of the player.
+		const username = typeof player === "string" ? player : player.username;
+
+		// Check if the database connection is not attached.
+		if (!this.attached) return false;
+
+		// Check if the player is in the database.
+		this.database.get("SELECT * FROM economy WHERE username = ?", [username], (error, row) => {
+			// Check if there was an error checking if the player is in the database.
+			if (error) this.logger.error("Failed to check if player exists.", error);
+
+			// Check if the player is not in the database.
+			else if (!row) return false;
+		});
+
+		// Return true if the player is in the database.
+		return true;
+	}
+
+	/**
+	 * Gets the balance of the player.
+	 * @param player The player to get the balance of.
+	 * @returns The balance of the player.
+	 */
+	public async get(player: Player | string): Promise<number> {
+		return new Promise((resolve) => {
+			// Get the username of the player.
+			const username = typeof player === "string" ? player : player.username;
+
+			// Check if the database connection is not attached.
+			if (!this.attached) return resolve(0);
+
+			// Get the balance of the player.
+			this.database.get<{ balance: number }>("SELECT balance FROM economy WHERE username = ?", [username], (error, row) => {
+				// Check if there was an error getting the balance of the player.
+				if (error) this.logger.error("Failed to get player balance.", error);
+
+				// Check if the player is not in the database.
+				else if (!row) return resolve(0);
+
+				// Set the balance variable to the balance of the player.
+				else return resolve(row.balance);
+			});
+		});
+	}
+
+	/**
+	 * Sets the balance of the player.
+	 * @param player The player to set the balance of.
+	 * @param balance The balance to set.
+	 */
+	public set(player: Player | string, balance: number): void {
+		// Get the username of the player.
+		const username = typeof player === "string" ? player : player.username;
+
+		// Check if the database connection is not attached.
+		if (!this.attached) return;
+
+		// Set the balance of the player.
+		this.database.run("UPDATE economy SET balance = ? WHERE username = ?", [balance, username], (error) => {
+			// Check if there was an error setting the balance of the player.
+			if (error) this.logger.error("Failed to set player balance.", error);
+		});
+	}
+
+	protected onPlayerJoined(event: PlayerJoinSignal): void {
+		// Check if the database connection is not attached.
+		if (!this.attached) return;
+
+		// Check if the player is not in the database.
+		this.database.get("SELECT * FROM economy WHERE username = ?", [event.player.username], (error, row) => {
+			// Check if there was an error checking if the player is in the database.
+			if (error) this.logger.error("Failed to check if player exists.", error);
+
+			// Check if the player is not in the database.
+			else if (!row) {
+				// Add the player to the database.
+				this.database.run("INSERT INTO economy (username, balance) VALUES (?, ?)", [event.player.username, this.defaultBalance], (error) => {
+					// Check if there was an error adding the player to the database.
+					if (error) this.logger.error("Failed to add player to database.", error);
+
+					// Log that the player was added to the database successfully.
+					else this.logger.debug(`Player "${event.player.username}" was added to database.`);
+				});
+			}
+		});
 	}
 }
 
-export default new SamplePlugin();
+export { EconomyAPI };
+
+export default new EconomyAPI();
